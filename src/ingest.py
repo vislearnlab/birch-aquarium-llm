@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -77,10 +78,13 @@ def build_index() -> None:
         chunks=np.array(chunks, dtype=object),
         sources=np.array(sources, dtype=object),
     )
+    load_index.cache_clear()  # the on-disk index just changed
     print(f"wrote {config.INDEX_PATH}")
 
 
+@lru_cache(maxsize=1)
 def load_index() -> tuple[np.ndarray, list[str], list[str]]:
+    """Load the embedding index. Cached — the server queries this on every request."""
     if not config.INDEX_PATH.exists():
         raise SystemExit(f"no index at {config.INDEX_PATH}. run `ingest` first.")
     z = np.load(config.INDEX_PATH, allow_pickle=True)

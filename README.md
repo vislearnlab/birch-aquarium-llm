@@ -48,12 +48,64 @@ via Ollama (`llama3.1:8b`, ~5GB).
 # 1. Scrape the site (writes data/raw/*.md). Default: 100 pages, polite 1s delay.
 python scripts/run.py scrape
 
-# 2. Chunk + embed (writes data/index.npz)
+# 2. Fetch general sea-life reference content (Wikipedia) alongside the Birch pages
+python scripts/run.py reference
+
+# 3. Chunk + embed (writes data/index.npz)
 python scripts/run.py ingest
 
-# 3. Chat
+# 4. Chat
 python scripts/run.py chat
+
+# 5. HTTP endpoint for the browser experiment (see below)
+python scripts/run.py serve --port 8077
 ```
+
+## Serving the experiment
+
+`scripts/run.py serve` exposes the pipeline over HTTP for the `birch-ask`
+study in `vislearnlab/drawing_experiments`:
+
+    GET  /health   -> {ok, model, index_chunks, ollama}
+    POST /ask      -> {answer, sources, blocked, latency_ms, ...}
+                      body: {question, animal?, top_k?}
+
+Stdlib only, no web framework. The experiment's Node server proxies to it, so
+the model host is configurable (`BIRCH_LLM_URL`) and never public.
+
+Answers are tuned for the study: 2-4 sentences, no follow-up questions (a
+trailing question is also stripped defensively), and no references to any
+particular aquarium — children in the yoked condition must hear the same kind
+of content as children who asked.
+
+## Why the reference corpus matters
+
+The Birch scrape covers the animals Birch exhibits and little else. Measured on
+16 realistic child questions, a Birch-only index got ~5 wrong, and the errors
+clustered on species the site barely mentions: retrieval fell back to whatever
+page was nearest (mangroves, newsroom archives) and the 8B model filled the gap.
+It told a child octopuses are "safe to touch", answered an African-penguin
+question about little blue penguins, and inverted seahorse reproduction.
+
+`python scripts/run.py reference` adds Wikipedia articles for the 18 study
+species plus 20 general topics (657 -> 1422 chunks) and fixes all of them.
+
+> Re-run `ingest` after `reference`, and **restart any running `serve` process** —
+> the index is cached per process.
+
+## Safety
+
+`src/safety.py` gates questions before the model and answers before the
+experimenter, per the study protocol's commitment to "a list of off-limits
+topics and words" defaulting to *"Hang on, let me check with the experimenter."*
+
+The design priority is **not** blocking legitimate biology: children are looking
+at seahorses, sharks and octopuses, so "how do babies get born?", "is it
+poisonous?" and "do sharks bite people?" must get real answers. Patterns are
+narrow rather than keyword-broad — the violence rule requires a human object, so
+"does the octopus kill the crab" passes.
+
+    python tests/test_safety.py     # 22 must-block vs 30 must-pass cases
 
 ## Layout
 

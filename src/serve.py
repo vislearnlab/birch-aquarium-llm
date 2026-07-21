@@ -1,0 +1,253 @@
+"""HTTP server exposing the Birch RAG pipeline to the browser experiment.
+
+Stdlib only — no web framework, matching the repo's "no extra deps" setup.
+
+Endpoints
+    GET  /health          -> {ok, model, index_chunks, ollama}
+    POST /ask             -> {answer, sources, latency_ms, ...}
+
+The experiment's Node server proxies to this; see birch-ask/README.md.
+
+Run:  python scripts/run.py serve  [--port 8077]
+"""
+from __future__ import annotations
+
+import json
+import re
+import time
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
+
+import requests
+
+from . import config, ingest, safety
+
+# Kid-facing prompt. Deliberately diverges from chat.SYSTEM_PROMPT in two ways:
+#   1. NO follow-up questions — in the yoked-facts condition the experimenter
+#      reads these aloud, and a trailing question would hand the control group
+#      the very conversational pull the manipulation is supposed to withhold.
+#   2. No bracketed source links — the experimenter reads this text verbatim.
+SYSTEM_PROMPT = (
+    "You are a friendly ocean expert answering a question from a child aged 7 to 10 "
+    "who is looking at a photo of a sea creature.\n\n"
+    "How to answer:\n"
+    "- Use simple words a child understands. Short sentences.\n"
+    "- Be warm and excited about the ocean.\n"
+    "- If you use a tricky science word, explain it right after in plain words.\n"
+    "- Answer in 2 to 4 sentences. Do not lecture.\n"
+    "- Your answer will be READ ALOUD by an adult exactly as written. So write "
+    "only the answer itself — no headings, no bullet points, no stage "
+    "directions, no bracketed links, no emoji.\n"
+    "- Do NOT ask the child any questions. Do not end with a question. "
+    "Just give the answer and stop.\n\n"
+    "VERY IMPORTANT — talk about the ANIMAL, never about any particular aquarium:\n"
+    "- The reference material below comes partly from an aquarium website. Use the "
+    "FACTS in it, but never mention the aquarium, its name, its staff, its exhibits, "
+    "its tanks, or its website.\n"
+    "- Never say 'we', 'us', 'our', 'here', 'our aquarists', 'in our tank', or "
+    "'come visit'. You are not speaking on behalf of any institution.\n"
+    "- Never claim this animal lives at, or is on display at, any particular place.\n"
+    "- Write about the animal as it is in the world: what it does, eats, looks like, "
+    "where it lives in the wild.\n\n"
+    "What you know:\n"
+    "- Use the <context> below for facts about this animal.\n"
+    "- For general ocean and sea-creature questions you may also use your own ocean "
+    "knowledge. Be sure it is true.\n"
+    "- If you do not know, say 'Hmm, I'm not sure!' — never make anything up."
+)
+
+# Belt-and-braces: strip a trailing question even if the model ignores the prompt.
+_TRAILING_Q = re.compile(r"(?:(?<=[.!])|^)\s*[^.!?]*\?\s*$")
+
+
+def strip_follow_up(text: str) -> str:
+    """Remove a trailing follow-up question. Keeps text that is entirely one question."""
+    out = _TRAILING_Q.sub("", text.strip()).strip()
+    return out if out else text.strip()
+
+
+def build_context(hits):
+    return "\n\n---\n\n".join(
+        f"[{i}] source: {src}\n{chunk}" for i, (score, chunk, src) in enumerate(hits, 1)
+    )
+
+
+def ask(question: str, animal: str | None = None, top_k: int | None = None) -> dict:
+    """Retrieve context and generate one kid-facing answer. Returns a JSON-able dict."""
+    t0 = time.time()
+    query = f"{animal} {question}" if animal else question
+    hits = ingest.search(query, k=top_k or config.TOP_K)
+    t_retrieve = time.time()
+
+    user_msg = f"<context>\n{build_context(hits)}\n</context>\n\nQuestion: {question}"
+    if animal:
+        user_msg = f"The child is looking at a photo of: {animal}.\n\n" + user_msg
+
+    resp = requests.post(
+        f"{config.OLLAMA_HOST}/api/chat",
+        json={
+            "model": config.OLLAMA_MODEL,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            "stream": False,
+            "options": {"temperature": 0.7},
+        },
+        timeout=180,
+    )
+    resp.raise_for_status()
+    raw = resp.json().get("message", {}).get("content", "").strip()
+    answer = strip_follow_up(raw)
+    answer, institution_stripped = safety.strip_institution(answer)
+
+    # Output gate: even a benign question can produce something a child shouldn't hear.
+    out_verdict = safety.check_answer(answer)
+    if not out_verdict.ok:
+        return {
+            "answer": safety.REFUSAL,
+            "answer_raw": raw,
+            "blocked": True,
+            "blocked_stage": "answer",
+            "blocked_category": out_verdict.category,
+            "sources": [], "model": config.OLLAMA_MODEL, "animal": animal,
+            "question": question, "retrieve_ms": int((t_retrieve - t0) * 1000),
+            "latency_ms": int((time.time() - t0) * 1000),
+        }
+
+    return {
+        "answer": answer,
+        "answer_raw": raw,
+        "blocked": False,
+        "follow_up_stripped": raw != strip_follow_up(raw) or raw != answer,
+        "institution_stripped": institution_stripped,
+        "sources": [
+            {"score": round(s, 4), "source": src, "preview": chunk[:200]}
+            for s, chunk, src in hits
+        ],
+        "model": config.OLLAMA_MODEL,
+        "animal": animal,
+        "question": question,
+        "retrieve_ms": int((t_retrieve - t0) * 1000),
+        "latency_ms": int((time.time() - t0) * 1000),
+    }
+
+
+class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt, *args):  # quieter default logging
+        print(f"[serve] {fmt % args}")
+
+    def _send(self, code: int, payload: dict):
+        body = json.dumps(payload).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self._send(204, {})
+
+    def do_GET(self):
+        if urlparse(self.path).path != "/health":
+            self._send(404, {"error": "not found"})
+            return
+        try:
+            _, chunks, _ = ingest.load_index()
+            n = len(chunks)
+        except SystemExit as e:
+            self._send(503, {"ok": False, "error": str(e)})
+            return
+        try:
+            r = requests.get(f"{config.OLLAMA_HOST}/api/tags", timeout=5)
+            ollama = "up" if r.ok else f"http {r.status_code}"
+        except requests.RequestException as e:
+            ollama = f"down ({e.__class__.__name__})"
+        self._send(200, {
+            "ok": ollama == "up",
+            "model": config.OLLAMA_MODEL,
+            "index_chunks": n,
+            "ollama": ollama,
+        })
+
+    def do_POST(self):
+        if urlparse(self.path).path != "/ask":
+            self._send(404, {"error": "not found"})
+            return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except (ValueError, json.JSONDecodeError) as e:
+            self._send(400, {"error": f"bad JSON: {e}"})
+            return
+
+        question = (body.get("question") or "").strip()
+        if not question:
+            self._send(400, {"error": "missing 'question'"})
+            return
+
+        # Input gate. Blocked questions never reach the model; the experimenter gets
+        # the protocol's own remedy ("let me check with the experimenter") and the
+        # attempt is still returned so the client can log it.
+        verdict = safety.check_question(question)
+        if not verdict.ok:
+            print(f"[serve] BLOCKED ({verdict.category}): {question!r}")
+            payload = {
+                "answer": safety.REFUSAL,
+                "blocked": True,
+                "blocked_stage": "question",
+                "blocked_category": verdict.category,
+                "blocked_match": verdict.matched,
+                "sources": [], "model": config.OLLAMA_MODEL,
+                "animal": body.get("animal"), "question": question,
+                "retrieve_ms": 0, "latency_ms": 0,
+            }
+            for k in ("experimentId", "sessionId", "participantID", "trialNum", "questionIndex"):
+                if k in body:
+                    payload[k] = body[k]
+            self._send(200, payload)
+            return
+
+        try:
+            result = ask(question, animal=body.get("animal"), top_k=body.get("top_k"))
+        except requests.RequestException as e:
+            self._send(502, {"error": f"ollama unreachable: {e}"})
+            return
+        except Exception as e:  # keep the session alive; the UI shows a retry
+            self._send(500, {"error": f"{e.__class__.__name__}: {e}"})
+            return
+
+        # Echo experiment bookkeeping straight back so the client can log one record.
+        for k in ("experimentId", "sessionId", "participantID", "trialNum", "questionIndex"):
+            if k in body:
+                result[k] = body[k]
+        self._send(200, result)
+
+
+def warm_up():
+    """Load the embedding model + index once so the first child doesn't wait for it."""
+    try:
+        t0 = time.time()
+        ingest.search("sea creature", k=1)
+        print(f"[serve] warm-up complete in {time.time() - t0:.1f}s")
+    except Exception as e:
+        print(f"[serve] warm-up failed: {e}")
+
+
+def run(port: int = 8077, host: str = "127.0.0.1") -> None:
+    threading.Thread(target=warm_up, daemon=True).start()
+    srv = ThreadingHTTPServer((host, port), Handler)
+    print(f"[serve] birch LLM on http://{host}:{port}  (model={config.OLLAMA_MODEL})")
+    print("[serve]   GET  /health")
+    print("[serve]   POST /ask   {question, animal?}")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[serve] shutting down")
+        srv.shutdown()
