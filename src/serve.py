@@ -12,6 +12,8 @@ Run:  python scripts/run.py serve  [--port 8077]
 """
 from __future__ import annotations
 
+import base64
+import io
 import json
 import re
 import time
@@ -177,7 +179,8 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def do_POST(self):
-        if urlparse(self.path).path != "/ask":
+        path = urlparse(self.path).path
+        if path not in ("/ask", "/transcribe"):
             self._send(404, {"error": "not found"})
             return
         try:
@@ -185,6 +188,21 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
         except (ValueError, json.JSONDecodeError) as e:
             self._send(400, {"error": f"bad JSON: {e}"})
+            return
+
+        if path == "/transcribe":
+            b64 = body.get("audio") or ""
+            if not b64:
+                self._send(400, {"error": "missing 'audio' (base64)"})
+                return
+            try:
+                result = transcribe_audio(base64.b64decode(b64))
+            except Exception as e:
+                print(f"[serve] transcribe failed: {e}")
+                self._send(500, {"error": f"{e.__class__.__name__}: {e}"})
+                return
+            print(f"[serve] transcribed {result['bytes']}B -> {result['text']!r}")
+            self._send(200, result)
             return
 
         question = (body.get("question") or "").strip()
@@ -228,6 +246,33 @@ class Handler(BaseHTTPRequestHandler):
             if k in body:
                 result[k] = body[k]
         self._send(200, result)
+
+
+def transcribe_audio(raw: bytes) -> dict:
+    """Transcribe browser-recorded audio locally with Whisper.
+
+    Deliberately NOT the phone keyboard's dictation button: that ships the audio to
+    Apple/Google. This study runs its model locally, and routing children's questions
+    through a third-party speech service would undo that for no benefit — especially
+    since faster-whisper is already a dependency here.
+
+    faster-whisper accepts a file-like object and decodes via PyAV, so the browser's
+    WebM/Opus blob goes straight in with no ffmpeg step.
+    """
+    from . import voice  # lazy — don't load Whisper unless transcription is used
+
+    t0 = time.time()
+    text = " ".join(
+        s.text.strip()
+        for s in voice._model().transcribe(io.BytesIO(raw), language="en",
+                                           vad_filter=True)[0]
+    ).strip()
+    return {
+        "text": text,
+        "bytes": len(raw),
+        "model": config.WHISPER_MODEL,
+        "latency_ms": int((time.time() - t0) * 1000),
+    }
 
 
 def warm_up():

@@ -1,5 +1,13 @@
 #!/usr/bin/env python
-"""CLI entry point: scrape | ingest | chat."""
+"""CLI entry point: scrape | ingest | reference | chat | serve."""
+import os
+
+# Must be set before ANY import that pulls in numpy or ctranslate2. Anaconda's numpy
+# and faster-whisper (ctranslate2) ship separate OpenMP runtimes that collide on
+# macOS; the duplicate-init guard aborts the process rather than raising, so setting
+# it inside voice.py is too late once ingest has already imported numpy.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import argparse
 import sys
 from pathlib import Path
