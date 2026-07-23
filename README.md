@@ -107,9 +107,23 @@ narrow rather than keyword-broad — the violence rule requires a human object, 
 
     python tests/test_safety.py     # 22 must-block vs 30 must-pass cases
 
+## Choosing a model
+
+`tests/eval_models.py` factually compares candidate models over the 18 stimulus
+species, so a faster/smaller model can be vetted before it ships to children. It
+samples each case repeatedly (production runs at temperature 0.7) and grades by
+pass *rate*. See **[docs/EVAL.md](docs/EVAL.md)** for methodology and the current
+`llama3.1:8b` vs `llama3.2:3b` results.
+
+    python tests/eval_models.py --reps=5 llama3.1:8b llama3.2:3b
+
 ## Layout
 
 - `src/scraper.py` — polite crawler for birchaquarium.org, respects robots.txt
 - `src/ingest.py` — chunks markdown, embeds locally with sentence-transformers, saves a numpy index
 - `src/chat.py` — retrieval + Ollama streaming chat
+- `src/reference.py` — fetches Wikipedia reference articles for the study species
+- `src/serve.py` — HTTP endpoint (`/health`, `/ask`, `/transcribe`) for the experiment
+- `src/safety.py` — off-limits-topic gates on question and answer
 - `src/config.py` — model IDs, paths, tunables
+- `tests/eval_models.py` — factual model comparison (see [docs/EVAL.md](docs/EVAL.md))
