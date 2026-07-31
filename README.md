@@ -51,9 +51,10 @@ need to scrape or ingest to try it. After the Setup above:
 python scripts/run.py serve            # starts on http://localhost:8077
 ```
 
-Open **http://localhost:8077** — a chat page with an animal picker, a question box,
-and example questions. From a tablet/phone on the same Wi-Fi, first start with
-`serve --host 0.0.0.0` and open `http://<your-computer>.local:8077`.
+Open **http://localhost:8077** — a chat page with a **Subject ID + Age** bar, an
+animal picker, a question box, and example questions. Subject ID is required before
+asking; both are remembered across reloads. From a tablet/phone on the same Wi-Fi,
+first start with `serve --host 0.0.0.0` and open `http://<your-computer>.local:8077`.
 
 That's the whole demo: clone → `pip install` → `ollama pull llama3.2:3b` → `serve`.
 The first question loads the embedding model (~130MB) and, if the model isn't warm,
@@ -90,6 +91,29 @@ study (`vislearnlab/birch-ask`):
     POST /ask         -> {answer, sources, blocked, latency_ms, ...}
                          body: {question, animal?, top_k?}
     POST /transcribe  -> {text, ...}  body: {audio: base64}
+
+## Logging & data capture
+
+Every `/ask` — normal or safety-blocked — is logged with subject ID, age, question,
+animal, answer (shaped + raw), retrieved sources with scores, safety verdict, model,
+latencies, and timestamps. Two sinks:
+
+1. **`data/sessions.jsonl`** (always, source of truth) — one JSON object per line,
+   append-only, written synchronously. Gitignored. Never fails a session, and
+   survives a Mongo outage — you can backfill Mongo from it.
+2. **MongoDB `birch_ask.llm_demo`** (best-effort mirror) — enabled by dropping a
+   `mongo_auth.json` (`{"url": "mongodb://…"}`) in the repo root, or setting
+   `MONGO_URL`. Override target with `MONGO_DB` / `MONGO_COLLECTION`. Without
+   credentials it degrades to JSONL-only with a startup notice; the Mongo write runs
+   on a background thread and never blocks the answer.
+
+`mongo_auth.json` is a **secret and gitignored** — it is never committed. `pymongo` is
+in `requirements.txt`; if absent, logging falls back to JSONL. See `src/datalog.py`.
+
+Timestamps per record: `ts` (ISO-8601 UTC), `ts_epoch_ms`, `received_at_epoch_ms`,
+plus server-measured `retrieve_ms`, `latency_ms`, and `server_ms`.
+
+## Serving
 
 Stdlib only, no web framework. The experiment's Node server proxies to it, so
 the model host is configurable (`BIRCH_LLM_URL`) and never public.

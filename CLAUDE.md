@@ -53,7 +53,10 @@ is cached per process (`ingest.load_index` is `lru_cache`d).
 - `src/serve.py` — stdlib HTTP: `/` + `/demo` (browser chat page), `/health`, `/ask`,
   `/transcribe`. `ask()` is the real path (retrieval → prompt → safety → answer
   shaping); the eval calls it directly.
-- `src/demo.html` — self-contained browser demo page, served same-origin by `serve.py`
+- `src/demo.html` — self-contained browser demo page (Subject ID + Age + chat),
+  served same-origin by `serve.py`
+- `src/datalog.py` — durable logging: append-only `data/sessions.jsonl` (source of
+  truth) + best-effort MongoDB `birch_ask.llm_demo` mirror; never blocks/fails a session
 - `data/index.npz` — prebuilt embedding index committed so the demo runs on a fresh
   clone; rebuild with `ingest` after changing the corpus
 - `src/safety.py` — off-limits-topic gates on both question and answer, defaulting to
@@ -86,9 +89,11 @@ is cached per process (`ingest.load_index` is `lru_cache`d).
 - **Cold model load.** `warm_up()` warms the embedding index but not Ollama, and Ollama
   unloads after 5 min idle, so the first question of every session is slow. Run the
   model server with `OLLAMA_KEEP_ALIVE=-1`. (Open item — see project memory.)
-- **`serve.py` logs nothing durably** — only `print`s; it assumes the experiment's Node
-  server records everything. Retrieval scores, safety verdicts, and pre-shaping raw
-  answers exist only here and are currently lost. (Open item.)
+- **Durable logging is on** (`src/datalog.py`): every `/ask` → `data/sessions.jsonl`
+  (source of truth) + best-effort MongoDB `birch_ask.llm_demo`. Retrieval scores,
+  safety verdicts, raw answers, subject ID/age, and timestamps are all captured.
+  Mongo needs `mongo_auth.json` (gitignored secret) or `MONGO_URL`; without it,
+  JSONL-only. JSONL survives a Mongo outage — backfill from it.
 - **OpenMP collision on macOS.** `scripts/run.py` sets `KMP_DUPLICATE_LIB_OK` before any
   numpy/ctranslate2 import; don't move it below the imports.
 - Embeddings are normalized, so cosine == dot product; `search()` is a plain matmul.

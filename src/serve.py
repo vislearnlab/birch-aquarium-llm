@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from . import config, ingest, safety
+from . import config, datalog, ingest, safety
 
 
 @lru_cache(maxsize=1)
@@ -225,6 +225,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, result)
             return
 
+        t_recv = time.time()
         question = (body.get("question") or "").strip()
         if not question:
             self._send(400, {"error": "missing 'question'"})
@@ -232,7 +233,7 @@ class Handler(BaseHTTPRequestHandler):
 
         # Input gate. Blocked questions never reach the model; the experimenter gets
         # the protocol's own remedy ("let me check with the experimenter") and the
-        # attempt is still returned so the client can log it.
+        # attempt is still logged and returned.
         verdict = safety.check_question(question)
         if not verdict.ok:
             print(f"[serve] BLOCKED ({verdict.category}): {question!r}")
@@ -246,10 +247,7 @@ class Handler(BaseHTTPRequestHandler):
                 "animal": body.get("animal"), "question": question,
                 "retrieve_ms": 0, "latency_ms": 0,
             }
-            for k in ("experimentId", "sessionId", "participantID", "trialNum", "questionIndex"):
-                if k in body:
-                    payload[k] = body[k]
-            self._send(200, payload)
+            self._log_and_send(body, payload, t_recv)
             return
 
         try:
@@ -261,11 +259,51 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, {"error": f"{e.__class__.__name__}: {e}"})
             return
 
-        # Echo experiment bookkeeping straight back so the client can log one record.
+        self._log_and_send(body, result, t_recv)
+
+    # Fields the client may send for record-keeping; echoed back and logged.
+    _BOOKKEEPING = ("subjectId", "age", "experimentId", "sessionId",
+                    "participantID", "trialNum", "questionIndex")
+
+    def _log_and_send(self, body: dict, payload: dict, t_recv: float):
+        """Attach subject/bookkeeping fields, persist a full record, then respond.
+
+        Logging is durable (JSONL) + best-effort Mongo via datalog, and never blocks
+        or fails the response — see src/datalog.py.
+        """
+        subject = (str(body.get("subjectId") or body.get("subject_id") or "").strip()
+                   or None)
+        # Merge bookkeeping into the response so the client sees what was recorded.
+        payload["subjectId"] = subject
+        payload["age"] = body.get("age")
         for k in ("experimentId", "sessionId", "participantID", "trialNum", "questionIndex"):
             if k in body:
-                result[k] = body[k]
-        self._send(200, result)
+                payload[k] = body[k]
+
+        record = {
+            "subjectId": subject,
+            "age": body.get("age"),
+            "question": payload.get("question"),
+            "animal": payload.get("animal"),
+            "answer": payload.get("answer"),
+            "answer_raw": payload.get("answer_raw"),
+            "blocked": payload.get("blocked", False),
+            "blocked_stage": payload.get("blocked_stage"),
+            "blocked_category": payload.get("blocked_category"),
+            "sources": payload.get("sources"),
+            "model": payload.get("model"),
+            "retrieve_ms": payload.get("retrieve_ms"),
+            "latency_ms": payload.get("latency_ms"),
+            "received_at_epoch_ms": int(t_recv * 1000),
+            "server_ms": int((time.time() - t_recv) * 1000),
+            "client_ip": self.client_address[0] if self.client_address else None,
+            "user_agent": self.headers.get("User-Agent"),
+        }
+        for k in ("experimentId", "sessionId", "participantID", "trialNum", "questionIndex"):
+            if k in body:
+                record[k] = body[k]
+        datalog.log_interaction(record)  # datalog adds ts / ts_epoch_ms
+        self._send(200, payload)
 
 
 def transcribe_audio(raw: bytes) -> dict:

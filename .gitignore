@@ -1,4 +1,8 @@
 .env
+# Secrets — NEVER commit. Mongo connection string with credentials.
+mongo_auth.json
+# Interaction logs (source of truth for the demo; may contain subject data).
+data/sessions.jsonl
 .venv/
 __pycache__/
 *.pyc

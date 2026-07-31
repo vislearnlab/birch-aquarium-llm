@@ -43,6 +43,11 @@
     font: 600 1rem/1 inherit; padding: 0 20px; cursor: pointer; white-space: nowrap;
   }
   button:disabled { opacity: .5; cursor: default; }
+  .session { display: flex; gap: 10px; margin-bottom: 14px; }
+  .session .f { flex: 1; }
+  .session .f.age { flex: 0 0 96px; }
+  .session input.missing { border-color: var(--warn); }
+  .rec { font-size: .78rem; color: var(--muted); margin: 10px 0 0; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
   .chip {
     font-size: .85rem; padding: 6px 11px; border: 1px solid var(--line);
@@ -68,6 +73,17 @@
   <p class="sub">Local demo of the Birch Aquarium LLM — retrieval + <span id="model">…</span>, running on this machine.</p>
 
   <div class="card">
+    <div class="session">
+      <div class="f">
+        <label for="subj">Subject ID</label>
+        <input id="subj" type="text" placeholder="e.g. S014" autocomplete="off">
+      </div>
+      <div class="f age">
+        <label for="age">Age</label>
+        <input id="age" type="number" min="2" max="18" step="1" placeholder="yrs">
+      </div>
+    </div>
+
     <label for="animal">Animal the child is looking at</label>
     <select id="animal"></select>
 
@@ -84,6 +100,8 @@
     <div class="bubble" id="bubble"></div>
     <div class="meta" id="meta"></div>
   </div>
+
+  <p class="rec" id="rec"></p>
 </div>
 
 <script>
@@ -102,7 +120,24 @@ const EXAMPLES = [
 
 const $ = s => document.querySelector(s);
 const sel = $("#animal"), q = $("#q"), askBtn = $("#ask"),
-      answer = $("#answer"), bubble = $("#bubble"), meta = $("#meta");
+      answer = $("#answer"), bubble = $("#bubble"), meta = $("#meta"),
+      subj = $("#subj"), age = $("#age"), rec = $("#rec");
+
+// Remember subject + age across reloads so a mid-session refresh doesn't lose them.
+subj.value = localStorage.getItem("birch_subj") || "";
+age.value  = localStorage.getItem("birch_age")  || "";
+function saveSession() {
+  localStorage.setItem("birch_subj", subj.value.trim());
+  localStorage.setItem("birch_age", age.value.trim());
+  updateRec();
+}
+function updateRec() {
+  const s = subj.value.trim(), a = age.value.trim();
+  rec.textContent = s ? `Recording as subject ${s}${a ? ", age " + a : ""}.` : "";
+}
+subj.addEventListener("input", saveSession);
+age.addEventListener("input", saveSession);
+updateRec();
 
 ANIMALS.forEach(a => { const o = document.createElement("option"); o.textContent = a; sel.appendChild(o); });
 EXAMPLES.forEach(t => {
@@ -118,6 +153,18 @@ fetch("/health").then(r => r.json()).then(h => { $("#model").textContent = h.mod
 async function ask() {
   const question = q.value.trim();
   if (!question) return;
+
+  // Subject ID is required so every logged answer is attributable.
+  const subjectId = subj.value.trim();
+  if (!subjectId) {
+    subj.classList.add("missing");
+    subj.focus();
+    rec.textContent = "Enter a Subject ID before asking.";
+    return;
+  }
+  subj.classList.remove("missing");
+  const ageVal = age.value.trim() ? Number(age.value.trim()) : null;
+
   askBtn.disabled = true;
   answer.hidden = false;
   bubble.classList.remove("blocked");
@@ -127,7 +174,7 @@ async function ask() {
   try {
     const res = await fetch("/ask", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, animal: sel.value }),
+      body: JSON.stringify({ question, animal: sel.value, subjectId, age: ageVal }),
     });
     const d = await res.json();
     if (d.error) { bubble.textContent = "Error: " + d.error; return; }
