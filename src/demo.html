@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask Zorpie — Birch Aquarium LLM demo</title>
+<style>
+  :root {
+    --bg: #f3f7fa; --card: #ffffff; --ink: #16303d; --muted: #5b7686;
+    --accent: #0e7c9b; --accent-ink: #ffffff; --line: #dce6ec;
+    --bubble: #eef6f9; --warn: #b4531a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1a20; --card: #14262e; --ink: #e6eef2; --muted: #90a7b2;
+      --accent: #3bb3d0; --accent-ink: #06222b; --line: #24404b;
+      --bubble: #10222a; --warn: #e0995f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    display: flex; min-height: 100vh; align-items: flex-start; justify-content: center;
+  }
+  .wrap { width: 100%; max-width: 640px; padding: 28px 20px 60px; }
+  h1 { font-size: 1.5rem; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 22px; font-size: .92rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  label { display: block; font-size: .8rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px; }
+  select, input[type=text] {
+    width: 100%; padding: 11px 12px; border: 1px solid var(--line);
+    border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit;
+  }
+  .row { display: flex; gap: 10px; margin-top: 14px; }
+  .row input { flex: 1; }
+  button {
+    border: 0; border-radius: 9px; background: var(--accent); color: var(--accent-ink);
+    font: 600 1rem/1 inherit; padding: 0 20px; cursor: pointer; white-space: nowrap;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+  .chip {
+    font-size: .85rem; padding: 6px 11px; border: 1px solid var(--line);
+    border-radius: 999px; background: transparent; color: var(--accent); cursor: pointer;
+  }
+  .answer { margin-top: 20px; }
+  .bubble {
+    background: var(--bubble); border: 1px solid var(--line); border-radius: 12px;
+    padding: 15px 16px; font-size: 1.08rem; min-height: 30px;
+  }
+  .meta { color: var(--muted); font-size: .8rem; margin-top: 8px; display: flex;
+    gap: 14px; flex-wrap: wrap; }
+  .meta a { color: var(--muted); }
+  .blocked { color: var(--warn); font-weight: 600; }
+  .dots span { animation: b 1.2s infinite; opacity: .3; }
+  .dots span:nth-child(2){ animation-delay:.2s } .dots span:nth-child(3){ animation-delay:.4s }
+  @keyframes b { 0%,60%,100%{opacity:.3} 30%{opacity:1} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🐙 Ask Zorpie</h1>
+  <p class="sub">Local demo of the Birch Aquarium LLM — retrieval + <span id="model">…</span>, running on this machine.</p>
+
+  <div class="card">
+    <label for="animal">Animal the child is looking at</label>
+    <select id="animal"></select>
+
+    <div class="chips" id="chips"></div>
+
+    <div class="row">
+      <input id="q" type="text" placeholder="Ask a question about this animal…"
+             autocomplete="off" autofocus>
+      <button id="ask">Ask</button>
+    </div>
+  </div>
+
+  <div class="answer" id="answer" hidden>
+    <div class="bubble" id="bubble"></div>
+    <div class="meta" id="meta"></div>
+  </div>
+</div>
+
+<script>
+const ANIMALS = [
+  "Leopard shark","Horn shark","Epaulette shark",
+  "Giant Pacific octopus","Red octopus","Two-spot octopus",
+  "Little blue penguin","Gentoo penguin","African penguin",
+  "Loggerhead sea turtle","Green sea turtle","Hawksbill sea turtle",
+  "Dwarf seahorse","Big-bellied seahorse","Weedy seadragon",
+  "Sunflower sea star","Ochre sea star","Bat star",
+];
+const EXAMPLES = [
+  "Do sharks bite people?","Can I touch it?","What does it eat?",
+  "How do babies get born?","Why does it look like that?","Is it poisonous?",
+];
+
+const $ = s => document.querySelector(s);
+const sel = $("#animal"), q = $("#q"), askBtn = $("#ask"),
+      answer = $("#answer"), bubble = $("#bubble"), meta = $("#meta");
+
+ANIMALS.forEach(a => { const o = document.createElement("option"); o.textContent = a; sel.appendChild(o); });
+EXAMPLES.forEach(t => {
+  const c = document.createElement("button");
+  c.className = "chip"; c.textContent = t;
+  c.onclick = () => { q.value = t; q.focus(); };
+  $("#chips").appendChild(c);
+});
+
+fetch("/health").then(r => r.json()).then(h => { $("#model").textContent = h.model || "local model"; })
+  .catch(() => { $("#model").textContent = "local model"; });
+
+async function ask() {
+  const question = q.value.trim();
+  if (!question) return;
+  askBtn.disabled = true;
+  answer.hidden = false;
+  bubble.classList.remove("blocked");
+  bubble.innerHTML = '<span class="dots"><span>●</span><span>●</span><span>●</span></span>';
+  meta.textContent = "";
+  const t0 = performance.now();
+  try {
+    const res = await fetch("/ask", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, animal: sel.value }),
+    });
+    const d = await res.json();
+    if (d.error) { bubble.textContent = "Error: " + d.error; return; }
+    bubble.textContent = d.answer;
+    if (d.blocked) bubble.classList.add("blocked");
+    const bits = [];
+    bits.push((d.latency_ms ?? Math.round(performance.now() - t0)) + " ms");
+    if (d.blocked) bits.push("⚠ blocked: " + (d.blocked_category || d.blocked_stage || "safety"));
+    if (d.sources && d.sources.length) {
+      const s = d.sources[0].source || "";
+      bits.push("top source: " + s.replace(/^https?:\/\//, "").slice(0, 46));
+    }
+    meta.innerHTML = bits.map(b => "<span>" + b + "</span>").join("");
+  } catch (e) {
+    bubble.textContent = "Could not reach the model server. Is it still running?";
+  } finally {
+    askBtn.disabled = false;
+  }
+}
+askBtn.onclick = ask;
+q.addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
+</script>
+</body>
+</html>

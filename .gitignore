@@ -3,5 +3,6 @@
 __pycache__/
 *.pyc
 data/raw/
-data/index.npz
+# data/index.npz is committed as a prebuilt snapshot so the demo runs on a fresh
+# clone with no scrape/ingest. Rebuild + recommit it after changing the corpus.
 .DS_Store

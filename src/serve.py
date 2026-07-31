@@ -18,12 +18,20 @@ import json
 import re
 import time
 import threading
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
 
 from . import config, ingest, safety
+
+
+@lru_cache(maxsize=1)
+def _demo_page() -> str:
+    """Self-contained browser chat page, served same-origin at GET / and /demo."""
+    return (Path(__file__).parent / "demo.html").read_text(encoding="utf-8")
 
 # Kid-facing prompt. Deliberately diverges from chat.SYSTEM_PROMPT in two ways:
 #   1. NO follow-up questions — in the yoked-facts condition the experimenter
@@ -153,11 +161,23 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_html(self, html: str, code: int = 200):
+        body = html.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_OPTIONS(self):
         self._send(204, {})
 
     def do_GET(self):
-        if urlparse(self.path).path != "/health":
+        path = urlparse(self.path).path
+        if path in ("/", "/demo"):
+            self._send_html(_demo_page())
+            return
+        if path != "/health":
             self._send(404, {"error": "not found"})
             return
         try:

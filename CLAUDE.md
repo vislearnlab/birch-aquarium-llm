@@ -37,7 +37,7 @@ python scripts/run.py scrape          # crawl aquarium.ucsd.edu -> data/raw/*.md
 python scripts/run.py reference       # add Wikipedia species/topic articles
 python scripts/run.py ingest          # chunk + embed -> data/index.npz
 python scripts/run.py chat            # interactive REPL (--ask "..." for one-shot, --voice for mic)
-python scripts/run.py serve --host 0.0.0.0 --port 8077   # HTTP for the experiment
+python scripts/run.py serve --host 0.0.0.0 --port 8077   # HTTP API + browser demo at /
 
 python tests/test_safety.py           # safety gate: 22 must-block vs 30 must-pass
 python tests/eval_models.py --reps=5 llama3.1:8b llama3.2:3b   # factual model comparison
@@ -50,8 +50,12 @@ is cached per process (`ingest.load_index` is `lru_cache`d).
 
 - `src/config.py` — model IDs, paths, tunables (`OLLAMA_MODEL`, `TOP_K`, chunk sizes)
 - `src/ingest.py` — chunking + local embeddings + numpy index + `search()`
-- `src/serve.py` — stdlib HTTP: `/health`, `/ask`, `/transcribe`. `ask()` is the real
-  path (retrieval → prompt → safety → answer shaping); the eval calls it directly.
+- `src/serve.py` — stdlib HTTP: `/` + `/demo` (browser chat page), `/health`, `/ask`,
+  `/transcribe`. `ask()` is the real path (retrieval → prompt → safety → answer
+  shaping); the eval calls it directly.
+- `src/demo.html` — self-contained browser demo page, served same-origin by `serve.py`
+- `data/index.npz` — prebuilt embedding index committed so the demo runs on a fresh
+  clone; rebuild with `ingest` after changing the corpus
 - `src/safety.py` — off-limits-topic gates on both question and answer, defaulting to
   "Hang on, let me check with the experimenter." Tuned NOT to block legitimate biology.
 - `src/reference.py` — Wikipedia fetch for the 18 stimulus species + general topics

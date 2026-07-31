@@ -42,6 +42,25 @@ No API keys needed. Embeddings run locally via [sentence-transformers](https://w
 (`BAAI/bge-small-en-v1.5`, ~130MB, downloaded on first ingest). Chat runs locally
 via Ollama (`llama3.2:3b`, ~2GB).
 
+## Quick demo (browser)
+
+A prebuilt index (`data/index.npz`, 1,422 chunks) ships in the repo, so you do **not**
+need to scrape or ingest to try it. After the Setup above:
+
+```bash
+python scripts/run.py serve            # starts on http://localhost:8077
+```
+
+Open **http://localhost:8077** — a chat page with an animal picker, a question box,
+and example questions. From a tablet/phone on the same Wi-Fi, first start with
+`serve --host 0.0.0.0` and open `http://<your-computer>.local:8077`.
+
+That's the whole demo: clone → `pip install` → `ollama pull llama3.2:3b` → `serve`.
+The first question loads the embedding model (~130MB) and, if the model isn't warm,
+the LLM; run with `OLLAMA_KEEP_ALIVE=-1 ollama serve` to keep it resident between
+sessions. To rebuild the index from scratch instead of using the shipped one, see
+Usage below.
+
 ## Usage
 
 ```bash
@@ -64,11 +83,13 @@ python scripts/run.py serve --port 8077
 ## Serving the experiment
 
 `scripts/run.py serve` exposes the pipeline over HTTP for the `birch-ask`
-study in `vislearnlab/drawing_experiments`:
+study (`vislearnlab/birch-ask`):
 
-    GET  /health   -> {ok, model, index_chunks, ollama}
-    POST /ask      -> {answer, sources, blocked, latency_ms, ...}
-                      body: {question, animal?, top_k?}
+    GET  /            -> browser demo chat page (also /demo)
+    GET  /health      -> {ok, model, index_chunks, ollama}
+    POST /ask         -> {answer, sources, blocked, latency_ms, ...}
+                         body: {question, animal?, top_k?}
+    POST /transcribe  -> {text, ...}  body: {audio: base64}
 
 Stdlib only, no web framework. The experiment's Node server proxies to it, so
 the model host is configurable (`BIRCH_LLM_URL`) and never public.
