@@ -6,7 +6,7 @@ RAW_DIR = DATA_DIR / "raw"
 INDEX_PATH = DATA_DIR / "index.npz"
 
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "llama3.1:8b"
+OLLAMA_MODEL = "llama3.2:3b"  # chosen over llama3.1:8b: equal accuracy, ~2.5-3x faster (docs/EVAL.md)
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"  # local, ~130MB, 384-dim
 
 SEED_URL = "https://aquarium.ucsd.edu/"

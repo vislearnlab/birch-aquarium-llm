@@ -63,8 +63,9 @@ is cached per process (`ingest.load_index` is `lru_cache`d).
 
 - **Model: `llama3.2:3b`.** It and `llama3.1:8b` are indistinguishable on accuracy
   (16/18 clean each; the 8B's one flaky case is an ambiguous question, not a gap), and
-  the 3B is ~2.5–3× faster. See `docs/EVAL.md`. `config.OLLAMA_MODEL` still points at
-  the 8B — switching is a one-line change once `--reps=10` confirms.
+  the 3B is ~2.5–3× faster. See `docs/EVAL.md`. `config.OLLAMA_MODEL` is set to the 3B.
+  A `--reps=10` run to tighten the flaky-rate estimates is still worth doing but was
+  not blocking the switch.
 - **RAG, not fine-tuning** — the model reads scraped content at query time.
 - **Reference corpus is load-bearing.** A Birch-only index confabulated on species the
   site barely covers (told a child octopuses are "safe to touch", inverted seahorse

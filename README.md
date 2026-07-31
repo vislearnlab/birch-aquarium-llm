@@ -22,7 +22,7 @@ aquarium.ucsd.edu  ──▶  scraper.py  ──▶  data/raw/*.md
                                          data/index.npz
                                               │
                                               ▼
-                            chat.py  ──▶  Ollama / llama3.1:8b (RAG)
+                            chat.py  ──▶  Ollama / llama3.2:3b (RAG)
 ```
 
 ## Setup
@@ -31,7 +31,7 @@ aquarium.ucsd.edu  ──▶  scraper.py  ──▶  data/raw/*.md
 # 1. Install Ollama and pull the model
 brew install ollama
 brew services start ollama
-ollama pull llama3.1:8b
+ollama pull llama3.2:3b     # the default (see docs/EVAL.md); `ollama pull llama3.1:8b` if you want to compare
 
 # 2. Python deps
 python -m venv .venv && source .venv/bin/activate
@@ -40,7 +40,7 @@ pip install -r requirements.txt
 
 No API keys needed. Embeddings run locally via [sentence-transformers](https://www.sbert.net/)
 (`BAAI/bge-small-en-v1.5`, ~130MB, downloaded on first ingest). Chat runs locally
-via Ollama (`llama3.1:8b`, ~5GB).
+via Ollama (`llama3.2:3b`, ~2GB).
 
 ## Usage
 
