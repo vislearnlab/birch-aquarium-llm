@@ -83,10 +83,25 @@ def build_context(hits):
     )
 
 
-def ask(question: str, animal: str | None = None, top_k: int | None = None) -> dict:
-    """Retrieve context and generate one kid-facing answer. Returns a JSON-able dict."""
+def ask(
+    question: str,
+    animal: str | None = None,
+    top_k: int | None = None,
+    previous_question: str | None = None,
+    previous_answer: str | None = None,
+) -> dict:
+    """Retrieve context and generate one kid-facing answer. Returns a JSON-able dict.
+
+    Each call is otherwise stateless — the caller (birch-ask) hands back the
+    immediately preceding question/answer for the current animal, if any, so
+    a follow-up like "what kind of foods?" has something to anchor to instead
+    of reading as a fresh, unrelated question. Folded into both the retrieval
+    query (the previous question often carries the actual topic; the current
+    one alone may not) and the chat history (as a real prior turn, not text
+    glued into the current one).
+    """
     t0 = time.time()
-    query = f"{animal} {question}" if animal else question
+    query = " ".join(p for p in (animal, previous_question, question) if p)
     hits = ingest.search(query, k=top_k or config.TOP_K)
     t_retrieve = time.time()
 
@@ -94,14 +109,17 @@ def ask(question: str, animal: str | None = None, top_k: int | None = None) -> d
     if animal:
         user_msg = f"The child is looking at a photo of: {animal}.\n\n" + user_msg
 
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if previous_question and previous_answer:
+        messages.append({"role": "user", "content": previous_question})
+        messages.append({"role": "assistant", "content": previous_answer})
+    messages.append({"role": "user", "content": user_msg})
+
     resp = requests.post(
         f"{config.OLLAMA_HOST}/api/chat",
         json={
             "model": config.OLLAMA_MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
+            "messages": messages,
             "stream": False,
             "options": {"temperature": 0.7},
         },
@@ -251,7 +269,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         try:
-            result = ask(question, animal=body.get("animal"), top_k=body.get("top_k"))
+            result = ask(
+                question,
+                animal=body.get("animal"),
+                top_k=body.get("top_k"),
+                previous_question=body.get("previousQuestion"),
+                previous_answer=body.get("previousAnswer"),
+            )
         except requests.RequestException as e:
             self._send(502, {"error": f"ollama unreachable: {e}"})
             return
