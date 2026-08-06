@@ -16,9 +16,10 @@ answered about little blue penguins, and inverted seahorse reproduction.
 
 Methodology
 -----------
-Each case runs `reps` times because production generates at temperature 0.7 — the
-same question yields different answers to different children, so a single sample
-measures luck, not the model. A case is "clean" only if it passed EVERY sample:
+Each case runs `reps` times because production still samples with some
+randomness (config.TEMPERATURE) — the same question can yield different
+answers to different children, so a single sample measures luck, not the
+model. A case is "clean" only if it passed EVERY sample:
 an answer that is right 4 times in 5 is still a wrong answer one child in five
 hears read aloud. Cases that pass sometimes are reported as FLAKY rather than
 silently rounded to pass or fail.
@@ -145,7 +146,7 @@ def grade(case: dict, answer: str) -> tuple[bool, str]:
 def run_model(model: str, reps: int = 3, verbose: bool = True) -> dict:
     """Run every case `reps` times and score by pass RATE, not a single sample.
 
-    Production runs at temperature 0.7, so the same question genuinely yields
+    Production runs at config.TEMPERATURE, so the same question can still yield
     different answers to different children. A one-shot pass/fail hides that; a
     case that passes 2/3 of the time is a different risk than one that passes 3/3,
     and both are hidden if you sample once. This is why the first eval run showed

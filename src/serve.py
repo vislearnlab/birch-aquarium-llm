@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import random
 import re
 import time
 import threading
@@ -67,8 +68,27 @@ SYSTEM_PROMPT = (
     "- If you do not know, say 'Hmm, I'm not sure!' — never make anything up."
 )
 
+# Shown to the experimenter, appended to the answer, when the numeric-grounding
+# check below fires. Three variants so it doesn't read as the same rote line
+# repeated across a session. Authored text, not model output, so it's exempt
+# from (and doesn't need) the institution-scrubbing applied to generated
+# answers — the whole point here is to name Birch Aquarium as a real resource.
+UNCERTAIN_CAVEATS = [
+    "Zorpie isn't quite sure about the answer to that one! That sounds like a "
+    "perfect question for someone who works at Birch Aquarium — you could ask "
+    "them today, or the next time you visit.",
+    "Hmm, that's a tricky one — Zorpie doesn't know for sure! The folks at "
+    "Birch Aquarium would probably love that question. Maybe ask one of them "
+    "today, or next time you're here!",
+    "Zorpie's still learning about that one! That would be a great question "
+    "for an expert at Birch Aquarium — ask if you see one today, or on your "
+    "next visit.",
+]
+
 # Belt-and-braces: strip a trailing question even if the model ignores the prompt.
 _TRAILING_Q = re.compile(r"(?:(?<=[.!])|^)\s*[^.!?]*\?\s*$")
+# Pulls specific numbers out of text for the numeric-grounding check in ask().
+_NUM_RE = re.compile(r"\d+(?:\.\d+)?")
 
 
 def strip_follow_up(text: str) -> str:
@@ -81,6 +101,10 @@ def build_context(hits):
     return "\n\n---\n\n".join(
         f"[{i}] source: {src}\n{chunk}" for i, (score, chunk, src) in enumerate(hits, 1)
     )
+
+
+def numbers_in(text: str) -> set[str]:
+    return set(_NUM_RE.findall(text))
 
 
 def ask(
@@ -105,7 +129,8 @@ def ask(
     hits = ingest.search(query, k=top_k or config.TOP_K)
     t_retrieve = time.time()
 
-    user_msg = f"<context>\n{build_context(hits)}\n</context>\n\nQuestion: {question}"
+    context_text = build_context(hits)
+    user_msg = f"<context>\n{context_text}\n</context>\n\nQuestion: {question}"
     if animal:
         user_msg = f"The child is looking at a photo of: {animal}.\n\n" + user_msg
 
@@ -121,7 +146,7 @@ def ask(
             "model": config.OLLAMA_MODEL,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": 0.7},
+            "options": {"temperature": config.TEMPERATURE},
         },
         timeout=180,
     )
@@ -129,6 +154,7 @@ def ask(
     raw = resp.json().get("message", {}).get("content", "").strip()
     answer = strip_follow_up(raw)
     answer, institution_stripped = safety.strip_institution(answer)
+    follow_up_stripped = raw != strip_follow_up(raw) or raw != answer
 
     # Output gate: even a benign question can produce something a child shouldn't hear.
     out_verdict = safety.check_answer(answer)
@@ -144,11 +170,26 @@ def ask(
             "latency_ms": int((time.time() - t0) * 1000),
         }
 
+    # Numeric-grounding check: if the answer states a specific number that
+    # doesn't appear anywhere in the retrieved context, the model likely
+    # filled a gap with its own general knowledge rather than reading it off
+    # a real source. Manual A/B testing (see project notes) found this catches
+    # confidently-fabricated numbers with zero false positives on well-
+    # grounded answers, though it can't catch non-numeric fabrications — a
+    # known, accepted gap for now. Appends a kid-facing redirect to Birch
+    # Aquarium staff rather than letting a made-up number stand unqualified.
+    unmatched_numbers = sorted(numbers_in(answer) - numbers_in(context_text))
+    uncertain = bool(unmatched_numbers)
+    if uncertain:
+        answer = f"{answer.rstrip()} {random.choice(UNCERTAIN_CAVEATS)}"
+
     return {
         "answer": answer,
         "answer_raw": raw,
         "blocked": False,
-        "follow_up_stripped": raw != strip_follow_up(raw) or raw != answer,
+        "uncertain": uncertain,
+        "unmatched_numbers": unmatched_numbers,
+        "follow_up_stripped": follow_up_stripped,
         "institution_stripped": institution_stripped,
         "sources": [
             {"score": round(s, 4), "source": src, "preview": chunk[:200]}

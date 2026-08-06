@@ -37,8 +37,9 @@ right, not a toy prompt.
 ## Methodology, and why it's built this way
 
 **Repeated sampling, graded by pass *rate*.** Production generates at
-`temperature: 0.7`, so the same question yields different answers to different
-children. A single sample measures luck. Each case runs `--reps` times (default 3,
+`config.TEMPERATURE` (0.3, down from an original 0.7 — see the comment in
+`src/config.py`), so the same question can still yield different answers to
+different children, just less often. A single sample measures luck. Each case runs `--reps` times (default 3,
 use 5 for a decision), and a case is **clean** only if it passed *every* sample —
 an answer that is right 4 times in 5 is still a wrong answer one child in five hears
 read aloud. Cases that pass sometimes are reported as **FLAKY**, never silently

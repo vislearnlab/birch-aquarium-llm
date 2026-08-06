@@ -21,6 +21,16 @@ CHUNK_CHARS = 1500
 CHUNK_OVERLAP = 200
 TOP_K = 6
 
+# Was 0.7. Manual A/B testing (5 well-grounded questions, temps 0.0-1.0) found
+# well-grounded facts stay correct across the whole range, but two things get
+# worse as temperature rises: an ungrounded question (no matching corpus
+# content) goes from consistently admitting "we don't know" at 0.0 to
+# confidently fabricating a different number ~75% of the time at 0.7, and
+# even a normally-solid fact (seahorse egg-carrying) started to garble at
+# 1.0. 0.3 keeps a little phrasing variety across sessions without reaching
+# either failure mode.
+TEMPERATURE = 0.3
+
 # Voice (mic input + Whisper transcription)
 WHISPER_MODEL = "base.en"  # ~150MB, English-only, fast on CPU
 AUDIO_SAMPLE_RATE = 16000

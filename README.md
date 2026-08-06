@@ -156,7 +156,8 @@ narrow rather than keyword-broad — the violence rule requires a human object, 
 
 `tests/eval_models.py` factually compares candidate models over the 18 stimulus
 species, so a faster/smaller model can be vetted before it ships to children. It
-samples each case repeatedly (production runs at temperature 0.7) and grades by
+samples each case repeatedly (production runs at `config.TEMPERATURE`, currently
+0.3) and grades by
 pass *rate*. See **[docs/EVAL.md](docs/EVAL.md)** for methodology and the current
 `llama3.1:8b` vs `llama3.2:3b` results.
 
