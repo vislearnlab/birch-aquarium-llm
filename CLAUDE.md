@@ -86,9 +86,13 @@ is cached per process (`ingest.load_index` is `lru_cache`d).
 - **Regex graders can't see negation.** In `tests/eval_models.py`, a `must_not` on
   "safe to touch" matches "NOT safe to touch". Always read the printed transcripts;
   never trust a headline number you haven't spot-checked. (`docs/EVAL.md` has the story.)
-- **Cold model load.** `warm_up()` warms the embedding index but not Ollama, and Ollama
-  unloads after 5 min idle, so the first question of every session is slow. Run the
-  model server with `OLLAMA_KEEP_ALIVE=-1`. (Open item — see project memory.)
+- **Cold model load — fixed.** Ollama's default 5-min idle unload meant any gap
+  between questions (intro, animal browsing, choice screens) could evict the model
+  and force a full reload on the next `/ask`. Both `ask()` and `warm_up()` now send
+  `keep_alive: config.OLLAMA_KEEP_ALIVE` (`-1`, i.e. resident indefinitely) on every
+  `/api/chat` call, and `warm_up()` also does a real Ollama round-trip at startup, not
+  just the embedding index. This is per-request, so it holds even if `ollama serve`
+  is launched without the env var.
 - **Durable logging is on** (`src/datalog.py`): every `/ask` → `data/sessions.jsonl`
   (source of truth) + best-effort MongoDB `birch_ask.llm_demo`. Retrieval scores,
   safety verdicts, raw answers, subject ID/age, and timestamps are all captured.

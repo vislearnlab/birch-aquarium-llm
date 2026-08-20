@@ -150,6 +150,21 @@ EXAMPLES.forEach(t => {
 fetch("/health").then(r => r.json()).then(h => { $("#model").textContent = h.model || "local model"; })
   .catch(() => { $("#model").textContent = "local model"; });
 
+// Paints an already-safety-checked answer in word-by-word instead of one
+// blocking dump, so the wait doesn't read as a longer freeze than it has to.
+let revealGen = 0;
+function revealText(el, text, msPerWord = 45) {
+  const gen = ++revealGen;
+  const words = text.split(/(\s+)/);
+  el.textContent = "";
+  let i = 0;
+  (function step() {
+    if (gen !== revealGen || i >= words.length) return;
+    el.textContent += words[i++];
+    setTimeout(step, msPerWord);
+  })();
+}
+
 async function ask() {
   const question = q.value.trim();
   if (!question) return;
@@ -168,6 +183,7 @@ async function ask() {
   askBtn.disabled = true;
   answer.hidden = false;
   bubble.classList.remove("blocked");
+  revealGen++; // cancel any reveal still animating from the previous question
   bubble.innerHTML = '<span class="dots"><span>●</span><span>●</span><span>●</span></span>';
   meta.textContent = "";
   const t0 = performance.now();
@@ -178,7 +194,7 @@ async function ask() {
     });
     const d = await res.json();
     if (d.error) { bubble.textContent = "Error: " + d.error; return; }
-    bubble.textContent = d.answer;
+    revealText(bubble, d.answer);
     if (d.blocked) bubble.classList.add("blocked");
     const bits = [];
     bits.push((d.latency_ms ?? Math.round(performance.now() - t0)) + " ms");

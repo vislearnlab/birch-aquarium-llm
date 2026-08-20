@@ -47,6 +47,7 @@ def answer(question: str) -> str:
             {"role": "user", "content": user_msg},
         ],
         "stream": True,
+        "keep_alive": config.OLLAMA_KEEP_ALIVE,
     }
 
     text_parts: list[str] = []

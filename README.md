@@ -57,10 +57,10 @@ asking; both are remembered across reloads. From a tablet/phone on the same Wi-F
 first start with `serve --host 0.0.0.0` and open `http://<your-computer>.local:8077`.
 
 That's the whole demo: clone → `pip install` → `ollama pull llama3.2:3b` → `serve`.
-The first question loads the embedding model (~130MB) and, if the model isn't warm,
-the LLM; run with `OLLAMA_KEEP_ALIVE=-1 ollama serve` to keep it resident between
-sessions. To rebuild the index from scratch instead of using the shipped one, see
-Usage below.
+`serve` warms both the embedding index and the Ollama model at startup, and every
+request sends `keep_alive: -1`, so the model stays resident between sessions without
+any extra flags. To rebuild the index from scratch instead of using the shipped one,
+see Usage below.
 
 ## Usage
 

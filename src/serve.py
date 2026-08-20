@@ -146,6 +146,7 @@ def ask(
             "model": config.OLLAMA_MODEL,
             "messages": messages,
             "stream": False,
+            "keep_alive": config.OLLAMA_KEEP_ALIVE,
             "options": {"temperature": config.TEMPERATURE},
         },
         timeout=180,
@@ -399,13 +400,30 @@ def transcribe_audio(raw: bytes) -> dict:
 
 
 def warm_up():
-    """Load the embedding model + index once so the first child doesn't wait for it."""
+    """Load the embedding model + index, and pull the Ollama model into memory,
+    once at process start so the first child's question doesn't pay for either.
+    """
     try:
         t0 = time.time()
         ingest.search("sea creature", k=1)
-        print(f"[serve] warm-up complete in {time.time() - t0:.1f}s")
+        print(f"[serve] embedding warm-up complete in {time.time() - t0:.1f}s")
     except Exception as e:
-        print(f"[serve] warm-up failed: {e}")
+        print(f"[serve] embedding warm-up failed: {e}")
+    try:
+        t0 = time.time()
+        requests.post(
+            f"{config.OLLAMA_HOST}/api/chat",
+            json={
+                "model": config.OLLAMA_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+                "keep_alive": config.OLLAMA_KEEP_ALIVE,
+            },
+            timeout=180,
+        )
+        print(f"[serve] ollama warm-up complete in {time.time() - t0:.1f}s")
+    except Exception as e:
+        print(f"[serve] ollama warm-up failed: {e}")
 
 
 def run(port: int = 8077, host: str = "127.0.0.1") -> None:
