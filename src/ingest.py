@@ -98,3 +98,13 @@ def search(query: str, k: int = config.TOP_K) -> list[tuple[float, str, str]]:
     scores = embeddings @ qv
     top = np.argsort(-scores)[:k]
     return [(float(scores[i]), chunks[i], sources[i]) for i in top]
+
+
+def chunks_for_source(source: str) -> list[tuple[float, str, str]]:
+    """All chunks tagged with an exact `source:` value, e.g. `video-caption:leopard_shark`.
+
+    Used to force-include a specific source's content in the context regardless
+    of embedding rank — see serve.ask()'s video-caption handling.
+    """
+    _, chunks, sources = load_index()
+    return [(1.0, c, s) for c, s in zip(chunks, sources) if s == source]

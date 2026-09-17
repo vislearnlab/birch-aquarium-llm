@@ -28,6 +28,24 @@ import requests
 
 from . import config, datalog, ingest, safety
 
+# birch-ask-v2 sends the animal's display `label` (stimuli-v2.js) with each
+# question. When it matches one of these, that animal's video-caption source
+# (data/raw/video-caption-*.md, tagged `source: video-caption:<id>`) is forced
+# into the retrieval context regardless of embedding rank — see ask()'s
+# "VERY IMPORTANT" comment. Keys are lowercased for case-insensitive matching.
+VIDEO_CAPTION_LABEL_TO_ID = {
+    "leopard shark": "leopard_shark",
+    "loggerhead sea turtle": "loggerhead_sea_turtle",
+    "giant pacific octopus": "giant_pacific_octopus",
+    "seahorse": "seahorse",
+    "lionfish": "lionfish",
+    "clownfish": "clownfish",
+    "pacific spiny lumpsucker": "pacific_spiny_lumpsucker",
+    "sea urchin": "sea_urchins",
+    "gray whale": "gray_whale",
+    "moon jelly": "moon_jellies",
+}
+
 
 @lru_cache(maxsize=1)
 def _demo_page() -> str:
@@ -126,8 +144,22 @@ def ask(
     """
     t0 = time.time()
     query = " ".join(p for p in (animal, previous_question, question) if p)
-    hits = ingest.search(query, k=top_k or config.TOP_K)
+    k = top_k or config.TOP_K
+    hits = ingest.search(query, k=k)
     t_retrieve = time.time()
+
+    # If this animal has a birch-ask-v2 video-caption source, force it into the
+    # context ahead of anything semantic search found — the video is what the
+    # child just watched, so Zorpie's answer must not contradict it. Dedup
+    # against the semantic hits, then keep the total at k so prompt-prefill
+    # latency doesn't creep (see config.TOP_K's comment).
+    video_id = VIDEO_CAPTION_LABEL_TO_ID.get((animal or "").strip().lower())
+    if video_id:
+        forced = ingest.chunks_for_source(f"video-caption:{video_id}")
+        if forced:
+            forced_sources = {s for _, _, s in forced}
+            hits = forced + [h for h in hits if h[2] not in forced_sources]
+            hits = hits[:k]
 
     context_text = build_context(hits)
     user_msg = f"<context>\n{context_text}\n</context>\n\nQuestion: {question}"

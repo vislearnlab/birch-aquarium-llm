@@ -1,0 +1,304 @@
+<title>Before / After — Birch RAG pipeline</title>
+<style>
+  :root {
+    --paper: #f2ede2;
+    --ink: #17211e;
+    --ink-soft: #4b544e;
+    --rule: #d9d0bd;
+    --card: #fbf8f1;
+    --before: #b5451c;
+    --before-soft: #b5451c14;
+    --after: #1f6b5c;
+    --after-soft: #1f6b5c14;
+    --accent: #1f6b5c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #10160f;
+      --ink: #ece7d9;
+      --ink-soft: #a7ac9f;
+      --rule: #2b332a;
+      --card: #161d15;
+      --before: #e2793f;
+      --before-soft: #e2793f1c;
+      --after: #4fae98;
+      --after-soft: #4fae981c;
+      --accent: #4fae98;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #10160f;
+    --ink: #ece7d9;
+    --ink-soft: #a7ac9f;
+    --rule: #2b332a;
+    --card: #161d15;
+    --before: #e2793f;
+    --before-soft: #e2793f1c;
+    --after: #4fae98;
+    --after-soft: #4fae981c;
+    --accent: #4fae98;
+  }
+  :root[data-theme="light"] {
+    --paper: #f2ede2;
+    --ink: #17211e;
+    --ink-soft: #4b544e;
+    --rule: #d9d0bd;
+    --card: #fbf8f1;
+    --before: #b5451c;
+    --before-soft: #b5451c14;
+    --after: #1f6b5c;
+    --after-soft: #1f6b5c14;
+    --accent: #1f6b5c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: Charter, "Iowan Old Style", Georgia, "Times New Roman", serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 4rem 1.75rem 6rem;
+  }
+
+  .kicker {
+    font-family: "Avenir Next", Avenir, "Segoe UI", -apple-system, sans-serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-family: "Avenir Next", Avenir, "Segoe UI", -apple-system, sans-serif;
+    font-weight: 650;
+    font-size: clamp(1.9rem, 1.5rem + 1.6vw, 2.6rem);
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 0.6rem;
+  }
+  .lede {
+    font-size: 1.09rem;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0 0 2.6rem;
+  }
+  .lede code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--before-soft);
+    padding: 0.05em 0.35em;
+    border-radius: 3px;
+  }
+
+  .mechanics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-bottom: 3.5rem;
+    font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+  }
+  .mechanics div {
+    background: var(--card);
+    padding: 1.1rem 1.2rem;
+  }
+  .mechanics .num {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .mechanics p {
+    margin: 0.35rem 0 0;
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+    line-height: 1.4;
+  }
+
+  .card {
+    border-top: 1px solid var(--rule);
+    padding-top: 2.6rem;
+    margin-bottom: 3.2rem;
+  }
+  .card:first-of-type { border-top: none; }
+
+  .placard {
+    display: flex;
+    align-items: baseline;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+    font-size: 0.76rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 0.9rem;
+  }
+  .placard .animal { color: var(--ink); font-weight: 650; }
+  .placard .dot { opacity: 0.4; }
+
+  .question {
+    font-size: 1.5rem;
+    font-style: italic;
+    text-wrap: balance;
+    margin: 0 0 1.7rem;
+    max-width: 34ch;
+  }
+  .question::before { content: "\201C"; }
+  .question::after { content: "\201D"; }
+
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.4rem;
+  }
+  @media (max-width: 680px) {
+    .compare { grid-template-columns: 1fr; }
+  }
+
+  .answer {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-top-width: 3px;
+    padding: 1.3rem 1.4rem 1.2rem;
+  }
+  .answer.before { border-top-color: var(--before); }
+  .answer.after { border-top-color: var(--after); }
+
+  .answer .label {
+    font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+    font-size: 0.72rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 0.7rem;
+  }
+  .answer.before .label { color: var(--before); }
+  .answer.after .label { color: var(--after); }
+
+  .answer p.body-text {
+    font-size: 0.97rem;
+    margin: 0;
+    max-height: 15.5em;
+    overflow-y: auto;
+  }
+
+  .annotation {
+    font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+    font-size: 0.84rem;
+    color: var(--ink-soft);
+    margin-top: 0.85rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--rule);
+  }
+  .annotation strong { color: var(--ink); font-weight: 650; }
+
+  .sources {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.74rem;
+    color: var(--ink-soft);
+    margin-top: 0.7rem;
+  }
+  .sources a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
+
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+  }
+</style>
+
+<div class="wrap">
+  <p class="kicker">Birch Ask &middot; RAG pipeline audit</p>
+  <h1>What the pipeline changes before a child hears it</h1>
+  <p class="lede">
+    Three real questions asked by real kids during pilot testing at Birch Aquarium,
+    each run twice against the same local model (<code>llama3.2:3b</code>): once as a
+    fully generic completion with no retrieval and no system prompt, and once through
+    the actual <code>ask()</code> pipeline this study uses.
+  </p>
+
+  <div class="mechanics">
+    <div>
+      <div class="num">Retrieval</div>
+      <p>Pulls the top 4 chunks from a Wikipedia + Birch Aquarium index, so answers are grounded in a real source instead of parametric memory.</p>
+    </div>
+    <div>
+      <div class="num">Kid-safety prompt</div>
+      <p>Forces 2&ndash;4 sentences, plain language, no trailing questions, and no mention of any specific aquarium.</p>
+    </div>
+    <div>
+      <div class="num">Output gate</div>
+      <p>Screens the answer, strips institution mentions, and flags any number that isn&rsquo;t actually in the retrieved text.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="placard"><span class="animal">Gentoo penguin</span><span class="dot">&bull;</span>age 9<span class="dot">&bull;</span>pilot participant museumAI06</p>
+    <p class="question">How fast can they slide on their bellies? Do they slide?</p>
+    <div class="compare">
+      <div class="answer before">
+        <div class="label">Before &mdash; generic, no grounding</div>
+        <p class="body-text">You&rsquo;re referring to turtles! Turtles are known for their ability to move slowly on land, but when it comes to sliding on their bellies, it&rsquo;s a bit more complicated. Some species of turtles, like the Spurred Tortoise or the Sulcata Tortoise, can indeed slide on their bellies when they feel threatened, scared, or trying to escape. This is often referred to as &ldquo;tortoise sliding&rdquo; or &ldquo;turtle sliding.&rdquo; When a turtle slides on its belly, it&rsquo;s usually because it&rsquo;s trying to: 1. Escape from predators&hellip; 2. Regain traction&hellip; 3. Move quickly over rough terrain&hellip;</p>
+        <p class="annotation"><strong>Wrong animal, from the first sentence.</strong> Nothing in the bare question mentions a penguin, so the model free-associates &ldquo;sliding on bellies&rdquo; onto tortoises and invents a whole taxonomy of turtle-sliding behavior that isn&rsquo;t real.</p>
+      </div>
+      <div class="answer after">
+        <div class="label">After &mdash; birch-ask pipeline</div>
+        <p class="body-text">Gentoo penguins are very good at sliding on their bellies across the snow to get around. They use their feet and flippers to push off the ground, kind of like a sled, and then they slide down hills or over snowdrifts. It&rsquo;s really fast! They can go up to 25 miles per hour when sliding on their bellies. <em>Zorpie&rsquo;s still learning about that one! That would be a great question for an expert at Birch Aquarium &mdash; ask if you see one today, or on your next visit.</em></p>
+        <p class="annotation"><strong>Correct animal and behavior &mdash; plus the grounding check catching itself.</strong> &ldquo;25 mph&rdquo; isn&rsquo;t actually in the retrieved source, so the output gate&rsquo;s numeric-grounding check flagged it as unverified and appended the italicized redirect-to-staff line live, rather than letting an ungrounded number stand as fact.</p>
+        <p class="sources">grounded in &rarr; <a href="https://en.wikipedia.org/wiki/Gentoo_penguin">en.wikipedia.org/wiki/Gentoo_penguin</a></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="placard"><span class="animal">Loggerhead sea turtle</span><span class="dot">&bull;</span>age 9<span class="dot">&bull;</span>pilot participant museum010</p>
+    <p class="question">why is it called loggerhead?</p>
+    <div class="compare">
+      <div class="answer before">
+        <div class="label">Before &mdash; generic, no grounding</div>
+        <p class="body-text">The term &ldquo;loggerhead&rdquo; refers to the green sea turtle (Chelonia mydas), which has a distinctive head shape that resembles a log or a wedge. In the 17th century, sailors and fishermen used the term &ldquo;loggerhead&rdquo; to describe the shape of the sea turtle&rsquo;s head, which they found similar to the shape of a log or a wedge. Over time, the name &ldquo;loggerhead&rdquo; became commonly used to refer to this species of turtle.</p>
+        <p class="annotation"><strong>Wrong species and invented history.</strong> It misattributes the name to the green sea turtle (a different species entirely) and fabricates a 17th-century sailor origin story with specific, false period detail.</p>
+      </div>
+      <div class="answer after">
+        <div class="label">After &mdash; birch-ask pipeline</div>
+        <p class="body-text">The loggerhead sea turtle gets its name because of its very large head compared to its body. It&rsquo;s like having a big head on a small body! The name &ldquo;loggerhead&rdquo; comes from the fact that the turtle has a distinctive head shape, which makes it look a bit different from other turtles.</p>
+        <p class="annotation"><strong>Correct species, correct etymology.</strong> Right animal, and the real reason for the name &mdash; a big head &mdash; without inventing a backstory to fill the gap.</p>
+        <p class="sources">grounded in &rarr; <a href="https://en.wikipedia.org/wiki/Loggerhead_sea_turtle">en.wikipedia.org/wiki/Loggerhead_sea_turtle</a></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="placard"><span class="animal">African penguin</span><span class="dot">&bull;</span>age 7<span class="dot">&bull;</span>pilot participant museumAI09</p>
+    <p class="question">Can their babies stay alive under the snow?</p>
+    <div class="compare">
+      <div class="answer before">
+        <div class="label">Before &mdash; generic, no grounding</div>
+        <p class="body-text">You&rsquo;re referring to polar bears! Polar bears (Ursus maritimus) are well adapted to living in the Arctic environment&hellip; When polar bears dig dens in the snow and ice, they can reduce their body temperature to just above freezing (32&deg;F or 0&deg;C) and slow down their heart rate. This allows them to survive for months without eating or drinking. Newborn polar bear cubs rely on their mother&rsquo;s milk for nutrition and warmth&hellip;</p>
+        <p class="annotation"><strong>Answers about the wrong animal entirely.</strong> With no context tying the question to an African penguin, the model defaults to polar bears &mdash; a fluent, confident, specific-sounding answer to a question nobody asked.</p>
+      </div>
+      <div class="answer after">
+        <div class="label">After &mdash; birch-ask pipeline</div>
+        <p class="body-text">African penguin babies can&rsquo;t survive under the snow because they live in warm places near the ocean, not in cold snowy areas. They need to be able to swim and find food in the water to grow strong. The snow would make it hard for them to breathe and get the food they need.</p>
+        <p class="annotation"><strong>Correctly on-topic, and honest.</strong> Directly addresses the premise (African penguins never see snow) instead of drifting to a different species entirely.</p>
+        <p class="sources">grounded in &rarr; <a href="https://en.wikipedia.org/wiki/African_penguin">en.wikipedia.org/wiki/African_penguin</a></p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Both columns use the same local model and the same question &mdash; the only difference is retrieval, the kid-safety system prompt, and the output gate in <code style="font-family: ui-monospace, monospace;">src/serve.py:ask()</code>. Questions sourced verbatim from pilot session logs in <code style="font-family: ui-monospace, monospace;">data/pilot/*_backup.jsonl</code>.
+  </footer>
+</div>
